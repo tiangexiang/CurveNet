@@ -10,3 +10,17 @@ Paper: https://arxiv.org/pdf/2105.01288v1.pdf
 **Code comming soon, stay tuned!**
 
 ![CurveNet](./teaser.png)
+
+## Citation  
+
+If you find this repo useful in your work or research, please cite:  
+
+```
+@article{xiang2021walk,
+  title={Walk in the Cloud: Learning Curves for Point Clouds Shape Analysis},
+  author={Xiang, Tiange and Zhang, Chaoyi and Song, Yang and Yu, Jianhui and Cai, Weidong},
+  journal={arXiv e-prints},
+  pages={arXiv--2105},
+  year={2021}
+}
+```
