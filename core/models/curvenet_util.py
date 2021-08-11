@@ -453,17 +453,6 @@ class CurveGrouping(nn.Module):
         self.att = nn.Conv1d(in_channel, 1, kernel_size=1, bias=False)
 
         self.walk = Walk(in_channel, k, curve_num, curve_length)
-        
-        # self.agent_mlp = nn.Sequential(
-        #     nn.Conv2d(in_channel * 2,
-        #                 1,
-        #                 kernel_size=1,
-        #                 bias=False), nn.BatchNorm2d(1))
-        # self.momentum_mlp = nn.Sequential(
-        #     nn.Conv1d(in_channel * 2,
-        #                 2,
-        #                 kernel_size=1,
-        #                 bias=False), nn.BatchNorm1d(2))
 
     def forward(self, x, xyz, idx):
         # starting point selection in self attention style
