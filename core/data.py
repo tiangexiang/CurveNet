@@ -27,6 +27,7 @@ def download_modelnet40():
     if not os.path.exists(DATA_DIR):
         os.mkdir(DATA_DIR)
     if not os.path.exists(os.path.join(DATA_DIR, 'modelnet40_ply_hdf5_2048')):
+        os.mkdir(os.path.join(DATA_DIR, 'modelnet40_ply_hdf5_2048'))
         www = 'https://shapenet.cs.stanford.edu/media/modelnet40_ply_hdf5_2048.zip'
         zipfile = os.path.basename(www)
         os.system('wget %s --no-check-certificate; unzip %s' % (www, zipfile))
@@ -38,10 +39,10 @@ def download_shapenetpart():
     if not os.path.exists(DATA_DIR):
         os.mkdir(DATA_DIR)
     if not os.path.exists(os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data')):
+        os.mkdir(os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data'))
         www = 'https://shapenet.cs.stanford.edu/media/shapenet_part_seg_hdf5_data.zip'
         zipfile = os.path.basename(www)
         os.system('wget %s --no-check-certificate; unzip %s' % (www, zipfile))
-        os.mkdir(os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data'))
         os.system('mv %s %s' % (zipfile[:-4], os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data')))
         os.system('rm %s' % (zipfile))
 

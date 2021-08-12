@@ -62,7 +62,7 @@ For voting, we used the ```voting_evaluate_cls.py```script provided in [RSCNN](h
 
 ### Evaluation with our pretrained model:
 
-Please download our pretrained model ```cls/``` at [google dirve](https://drive.google.com/drive/folders/1kX-zIipyzB0iMaopcijzdTRuHeTzfTSz?usp=sharing).
+Please download our pretrained model ```cls/``` at [google drive](https://drive.google.com/drive/folders/1kX-zIipyzB0iMaopcijzdTRuHeTzfTSz?usp=sharing).
 
 And then run:
 
@@ -112,7 +112,7 @@ For voting, we used the ```voting_evaluate_partseg.py```script provided in [RSCN
 
 ### Evaluation with our pretrained model:
 
-Please download our pretrained model ```partseg/``` at [google dirve](https://drive.google.com/drive/folders/1kX-zIipyzB0iMaopcijzdTRuHeTzfTSz?usp=sharing).
+Please download our pretrained model ```partseg/``` at [google drive](https://drive.google.com/drive/folders/1kX-zIipyzB0iMaopcijzdTRuHeTzfTSz?usp=sharing).
 
 And then run:
 
@@ -125,7 +125,7 @@ python3 main_partseg.py --exp_name=curvenet_seg_pretrained --eval=True --model_p
 
 ### Data
 
-The ModelNet40 dataset is used for the normal estimation experiments. We have preprocessed the raw ModelNet40 dataset into  ```.h5``` files that contains 2048 randomly sampled points per pointcloud and their one-to-one normal ground truths. 
+The ModelNet40 dataset is used for the normal estimation experiments. We have preprocessed the raw ModelNet40 dataset into  ```.h5``` files. Each point cloud instance contains 2048 randomly sampled points and point-to-point normal ground truths. 
 
 Please download our processed data [here](https://drive.google.com/file/d/1j6lB3ZOF0_x_l9bqdchAxIYBi7Devie8/view?usp=sharing) and place it to ```data/```, or you need to specify the data root path in ```core/data.py```.
 
@@ -159,7 +159,7 @@ Alternatively, you can directly modify ```core/test_normal.sh``` and simply run:
 
 ### Evaluation with our pretrained model:
 
-Please download our pretrained model ```normal/``` at [google dirve](https://drive.google.com/drive/folders/1kX-zIipyzB0iMaopcijzdTRuHeTzfTSz?usp=sharing).
+Please download our pretrained model ```normal/``` at [google drive](https://drive.google.com/drive/folders/1kX-zIipyzB0iMaopcijzdTRuHeTzfTSz?usp=sharing).
 
 And then run:
 

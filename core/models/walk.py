@@ -78,23 +78,28 @@ class Walk(nn.Module):
     def forward(self, xyz, x, adj, cur):
         bn, c, tot_points = x.size()
 
-        xyz = xyz.transpose(1,2).contiguous
+        # raw point coordinates
+        xyz = xyz.transpose(1,2).contiguous # bs, n, 3
 
+        # point features
         x = x.transpose(1,2).contiguous() # bs, n, c
 
         flatten_x = x.view(bn * tot_points, -1)
         batch_offset = torch.arange(0, bn, device=torch.device('cuda')).detach() * tot_points
 
-        #bs, n, k
-        tmp_adj = (adj + batch_offset.view(-1,1,1)).view(adj.size(0)*adj.size(1),-1)
+        # indices of neighbors for the starting points
+        tmp_adj = (adj + batch_offset.view(-1,1,1)).view(adj.size(0)*adj.size(1),-1) #bs, n, k
     
+        # batch flattened indices for teh starting points
         flatten_cur = (cur + batch_offset.view(-1,1,1)).view(-1)
 
         curves = []
 
+        # one step at a time
         for step in range(self.curve_length):
 
             if step == 0:
+                # get starting point features using flattend indices
                 starting_points =  flatten_x[flatten_cur, :].contiguous()
                 pre_feature = starting_points.view(bn, self.curve_num, -1, 1).transpose(1,2) # bs * n, c
             else:
@@ -102,13 +107,17 @@ class Walk(nn.Module):
                 cat_feature = torch.cat((cur_feature.squeeze(), pre_feature.squeeze()),dim=1)
                 att_feature = F.softmax(self.momentum_mlp(cat_feature),dim=1).view(bn, 1, self.curve_num, 2) # bs, 1, n, 2
                 cat_feature = torch.cat((cur_feature, pre_feature),dim=-1) # bs, c, n, 2
-
+                
+                # update curve descriptor
                 pre_feature = torch.sum(cat_feature * att_feature, dim=-1, keepdim=True) # bs, c, n
                 pre_feature_cos =  pre_feature.transpose(1,2).contiguous().view(bn * self.curve_num, -1)
 
             pick_idx = tmp_adj[flatten_cur] # bs*n, k
+            
+            # get the neighbors of current points
             pick_values = flatten_x[pick_idx.view(-1),:]
 
+            # reshape to fit crossover suppresion below
             pick_values_cos = pick_values.view(bn * self.curve_num, self.k, c)
             pick_values = pick_values_cos.view(bn, self.curve_num, self.k, c)
             pick_values_cos = pick_values_cos.transpose(1,2).contiguous()
@@ -116,7 +125,11 @@ class Walk(nn.Module):
             pick_values = pick_values.permute(0,3,1,2) # bs, c, n, k
 
             pre_feature_expand = pre_feature.expand_as(pick_values)
+            
+            # concat current point features with curve descriptors
             pre_feature_expand = torch.cat((pick_values, pre_feature_expand),dim=1)
+            
+            # which node to pick next?
             pre_feature_expand = self.agent_mlp(pre_feature_expand) # bs, 1, n, k
 
             if step !=0:
@@ -137,6 +150,7 @@ class Walk(nn.Module):
 
             flatten_cur = batched_index_select(pick_idx, 1, cur).squeeze() # bs * n
 
+            # collect curve progress
             curves.append(cur_feature)
 
         return torch.cat(curves,dim=-1)
