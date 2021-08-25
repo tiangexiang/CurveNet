@@ -43,7 +43,9 @@ Alternatively, you can directly modify ```core/start_cls.sh``` and simply run:
 ./start_cls.sh
 ```
 
-**NOTE:** Due to randomness, the results could be slightly different than the one reported in our paper. We repeated 5 runs with different random seeds, and got an average of **93.65%** classification accuracy.
+**NOTE:** Our reported model achieves **93.8%/94.2%** accuracy (see sections below). However, due to randomness, the best result might require repeated training processes. Hence, we also provide another benchmark result here (where we repeated 5 runs with different random seeds, and report their average), which is **93.65%** accuracy.
+
+<!-- **NOTE:** Due to randomness, the results could be slightly different than the one reported in our paper. We repeated 5 runs with different random seeds, and got an average of **93.65%** classification accuracy. -->
 
 ### Evaluation
 
@@ -94,7 +96,9 @@ Alternatively, you can directly modify ```core/start_part.sh``` and simply run:
 ./start_part.sh
 ```
 
-**NOTE:** Due to randomness, the results could be slightly different than the one reported in our paper. We repeated 5 runs with different random seeds, and got an average of **86.46** mIoU.
+**NOTE:** Our reported model achieves **86.6%/86.8%** mIoU (see sections below). However, due to randomness, the best result might require repeated training processes. Hence, we also provide another benchmark result here (where we repeated 5 runs with different random seeds, and report their average), which is **86.46** mIoU.
+
+<!-- **NOTE:** Due to randomness, the results could be slightly different than the one reported in our paper. We repeated 5 runs with different random seeds, and got an average of **86.46** mIoU. -->
 
 ### Evaluation
 
