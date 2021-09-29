@@ -6,7 +6,7 @@ Official implementation of "Walk in the Cloud: Learning Curves for Point Clouds 
 
 Paper: https://arxiv.org/abs/2105.01288
 
-![CurveNet](./teaser.png)
+![CurveNet](./poster3.png)
 
 ## Requirements
 - Python>=3.7
