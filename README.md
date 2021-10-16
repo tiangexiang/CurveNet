@@ -176,12 +176,13 @@ python3 main_normal.py --exp_name=curvenet_normal_pretrained --eval=True --model
 If you find this repo useful in your work or research, please cite:  
 
 ```
-@InProceedings{xiang2021walk,
-  title={Walk in the Cloud: Learning Curves for Point Clouds Shape Analysis},
-  author={Xiang, Tiange and Zhang, Chaoyi and Song, Yang and Yu, Jianhui and Cai, Weidong},
-  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
-  month = {October},
-  year = {2021}
+@InProceedings{Xiang_2021_ICCV,
+    author    = {Xiang, Tiange and Zhang, Chaoyi and Song, Yang and Yu, Jianhui and Cai, Weidong},
+    title     = {Walk in the Cloud: Learning Curves for Point Clouds Shape Analysis},
+    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+    month     = {October},
+    year      = {2021},
+    pages     = {915-924}
 }
 ```
 
