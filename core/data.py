@@ -11,89 +11,126 @@ Modified by
 """
 
 
-import os
-import sys
 import glob
+import gzip
 import h5py
 import numpy as np
+import os
+import sys
 import torch
+from dataclasses import dataclass
 from torch.utils.data import Dataset
 
+sys.path.append(f"{os.path.dirname(__file__)}/../../..")
+from utils.proteins import *
 
 # change this to your data root
-DATA_DIR = '../data/'
+DATA_DIR = f'{os.path.dirname(__file__)}/../../../structure_files/atom_sites'
+POINT_CLOUD_DIR = os.path.join(DATA_DIR, "point_clouds")
+POINT_CLOUD_HDF5 = lambda x: f"{POINT_CLOUD_DIR}/{x}_protein_point_clouds.hdf5"
 
-def download_modelnet40():
-    if not os.path.exists(DATA_DIR):
-        os.mkdir(DATA_DIR)
-    if not os.path.exists(os.path.join(DATA_DIR, 'modelnet40_ply_hdf5_2048')):
-        os.mkdir(os.path.join(DATA_DIR, 'modelnet40_ply_hdf5_2048'))
-        www = 'https://shapenet.cs.stanford.edu/media/modelnet40_ply_hdf5_2048.zip'
-        zipfile = os.path.basename(www)
-        os.system('wget %s --no-check-certificate; unzip %s' % (www, zipfile))
-        os.system('mv %s %s' % (zipfile[:-4], DATA_DIR))
-        os.system('rm %s' % (zipfile))
+EVAL_PCT = 0.1
 
 
-def download_shapenetpart():
-    if not os.path.exists(DATA_DIR):
-        os.mkdir(DATA_DIR)
-    if not os.path.exists(os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data')):
-        os.mkdir(os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data'))
-        www = 'https://shapenet.cs.stanford.edu/media/shapenet_part_seg_hdf5_data.zip'
-        zipfile = os.path.basename(www)
-        os.system('wget %s --no-check-certificate; unzip %s' % (www, zipfile))
-        os.system('mv %s %s' % (zipfile[:-4], os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data')))
-        os.system('rm %s' % (zipfile))
+@dataclass
+class ProteinPointCloud:
+    protein_id: str
+    atom_sites: np.ndarray
+
+    def get_w_label(self, label_lookup_dict):
+        return ProteinPointCloudWLabel(
+            protein_id=self.protein_id,
+            atom_sites=self.atom_sites,
+            labels=label_lookup_dict.get(self.protein_id))
 
 
-def load_data_normal(partition):
-    f = h5py.File(os.path.join(DATA_DIR, 'modelnet40_normal', 'normal_%s.h5'%partition), 'r+')
-    data = f['xyz'][:].astype('float32')
-    label = f['normal'][:].astype('float32')
-    f.close()
-    return data, label
+@dataclass
+class ProteinPointCloudWLabel:
+    protein_id: str
+    atom_sites: np.ndarray
+    labels: np.ndarray
 
 
-def load_data_cls(partition):
-    download_modelnet40()
-    all_data = []
-    all_label = []
-    for h5_name in glob.glob(os.path.join(DATA_DIR, 'modelnet40*hdf5_2048', '*%s*.h5'%partition)):
-        f = h5py.File(h5_name, 'r+')
-        data = f['data'][:].astype('float32')
-        label = f['label'][:].astype('int64')
-        f.close()
-        all_data.append(data)
-        all_label.append(label)
-    all_data = np.concatenate(all_data, axis=0)
-    all_label = np.concatenate(all_label, axis=0)
-    return all_data, all_label
+def store_point_clouds_w_labels_as_hd5f(point_clouds_w_labels, partition):
+    N = len(point_clouds_w_labels)
+    with h5py.File(POINT_CLOUD_HDF5(partition), "w") as f:
+        f.create_dataset("protein_id", shape=(N,), dtype=h5py.string_dtype(),
+                         data=[p.protein_id for p in point_clouds_w_labels])
+        f.create_dataset("labels", shape=(N,), dtype=h5py.vlen_dtype(np.dtype('int32')),
+                         data=[np.array(p.labels).astype(int) for p in point_clouds_w_labels])
+        f.create_dataset("atom_sites", shape=(N,2048,3), dtype=np.dtype(float),
+                         data=np.vstack([p.atom_sites for p in point_clouds_w_labels]))
 
 
-def load_data_partseg(partition):
-    download_shapenetpart()
-    all_data = []
-    all_label = []
-    all_seg = []
-    if partition == 'trainval':
-        file = glob.glob(os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data', 'hdf5_data', '*train*.h5')) \
-               + glob.glob(os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data', 'hdf5_data', '*val*.h5'))
+def read_point_clouds_w_labels_as_hd5f(partition):
+    with h5py.File(POINT_CLOUD_HDF5(partition), "r+") as f:
+        return f["atom_sites"][:], f["labels"][:]
+
+
+def protein_to_point_cloud(atom_sites: np.ndarray, num_points: int):
+    if atom_sites.shape[0] <= num_points:
+        padded = np.concatenate([atom_sites, np.zeros((num_points - atom_sites.shape[0], 3))])
+        assert(padded.shape == (num_points, 3))
+        return padded
     else:
-        file = glob.glob(os.path.join(DATA_DIR, 'shapenet_part_seg_hdf5_data', 'hdf5_data', '*%s*.h5'%partition))
-    for h5_name in file:
-        f = h5py.File(h5_name, 'r+')
-        data = f['data'][:].astype('float32')
-        label = f['label'][:].astype('int64')
-        seg = f['pid'][:].astype('int64')
-        f.close()
-        all_data.append(data)
-        all_label.append(label)
-        all_seg.append(seg)
-    all_data = np.concatenate(all_data, axis=0)
-    all_label = np.concatenate(all_label, axis=0)
-    all_seg = np.concatenate(all_seg, axis=0)
-    return all_data, all_label, all_seg
+        idx = np.sort(np.random.choice(np.arange(0, atom_sites.shape[0]), size=num_points, replace=False))
+        sampled = atom_sites[idx,:]
+        assert (sampled.shape == (num_points, 3))
+        return sampled
+
+
+def create_protein_point_clouds(num_points=2048, overwrite=False):
+    dir_exists = os.path.exists(POINT_CLOUD_DIR)
+    if dir_exists and overwrite:
+        os.rmdir(POINT_CLOUD_DIR)
+    if not dir_exists:
+        np.random.seed(20211020)  # set a seed to randomize train and eval groups
+
+        os.mkdir(POINT_CLOUD_DIR)
+
+        label_lookup_dict = load_labels()
+        print(max([len(k) for k in label_lookup_dict.keys()]))
+
+        train_point_clouds = []
+        test_point_clouds = []
+
+        atom_files = glob.glob(os.path.join(DATA_DIR, "atom_sites_part_*.parquet"))
+        for filename in atom_files:
+            print(filename.split("/")[-1])
+            atom_sites = pd.read_parquet(filename)
+            for id, group in atom_sites.groupby("protein_id"):
+                group = protein_to_point_cloud(group[['Cartn_x', 'Cartn_y', 'Cartn_z']].apply(pd.to_numeric).to_numpy(), num_points=num_points)
+                if np.random.random() < EVAL_PCT:
+                    test_point_clouds.append(ProteinPointCloud(id, group))
+                else:
+                    train_point_clouds.append(ProteinPointCloud(id, group))
+
+        train_point_clouds = [p.get_w_label(label_lookup_dict) for p in train_point_clouds if
+                              len(label_lookup_dict.get(p.protein_id)) > 0]
+        test_point_clouds = [p.get_w_label(label_lookup_dict) for p in test_point_clouds if
+                              len(label_lookup_dict.get(p.protein_id)) > 0]
+        print(f"Number of protein point clouds generated: {len(train_point_clouds) + len(test_point_clouds)}")
+        print(f"Number of training proteins: {len(train_point_clouds)}")
+        print(f"Number of test proteins: {len(test_point_clouds)}")
+        print(f"Storing protein point clouds in hd5f format: {POINT_CLOUD_HDF5}")
+        store_point_clouds_w_labels_as_hd5f(train_point_clouds, "train")
+        store_point_clouds_w_labels_as_hd5f(test_point_clouds, "test")
+        print("Done created point clouds")
+
+def load_labels():
+    def get_index_of_function_label(function, function_arr):
+        return function_arr.get(function)
+
+    functions = pd.read_parquet(f"{DATA_DIR}/alphafold_protein_to_parent_gomf_only.parquet")
+    functions["parent_gomf_w_name"] = functions.parent_gomf + "|" + functions.parent_gomf_name
+    unique_functions = sorted(functions.parent_gomf_w_name.dropna().unique())
+
+    functions_to_index = {function: int(i) for i, function in enumerate(unique_functions)}
+    functions['function_idx'] = functions.parent_gomf_w_name.apply(
+        lambda x: get_index_of_function_label(x, functions_to_index)
+    )
+    protein_to_function_labels = functions.groupby("protein_id").function_idx.agg(lambda x: sorted(list(set(x.dropna()))))
+    return protein_to_function_labels.to_dict()
 
 
 def translate_pointcloud(pointcloud):
@@ -117,11 +154,30 @@ def rotate_pointcloud(pointcloud):
     return pointcloud
 
 
-class ModelNet40(Dataset):
+class Proteins(Dataset):
     def __init__(self, num_points, partition='train'):
-        self.data, self.label = load_data_cls(partition)
+        self.num_label_categories = 18
+        self.data, self.label = self.load_data_cls(partition)
         self.num_points = num_points
-        self.partition = partition        
+        self.partition = partition
+
+    @staticmethod
+    def load_data_cls(partition, overwrite=False):
+        if not os.path.exists(DATA_DIR):
+            raise Exception("first download structure_files into project root")
+        create_protein_point_clouds(overwrite=overwrite)
+        all_data, all_label = read_point_clouds_w_labels_as_hd5f(partition)
+        # for f in glob.glob(os.path.join(DATA_DIR, 'modelnet40*hdf5_2048', '*%s*.h5'%partition)):
+        #     f = h5py.File(h5_name, 'r+')
+        #     data = f['data'][:].astype('float32')
+        #     label = f['label'][:].astype('int64')
+        #     f.close()
+        #     all_data.append(data)
+        #     all_label.append(label)
+        print(all_data.shape)
+        print(all_label.shape)
+        return all_data, all_label
+
 
     def __getitem__(self, item):
         pointcloud = self.data[item][:self.num_points]
@@ -131,65 +187,6 @@ class ModelNet40(Dataset):
             #pointcloud = rotate_pointcloud(pointcloud)
             np.random.shuffle(pointcloud)
         return pointcloud, label
-
-    def __len__(self):
-        return self.data.shape[0]
-
-class ModelNetNormal(Dataset):
-    def __init__(self, num_points, partition='train'):
-        self.data, self.label = load_data_normal(partition)
-        self.num_points = num_points
-        self.partition = partition
-
-    def __getitem__(self, item):
-        pointcloud = self.data[item][:self.num_points]
-        label = self.label[item][:self.num_points]
-        if self.partition == 'train':
-            #pointcloud = translate_pointcloud(pointcloud)
-            idx = np.arange(0, pointcloud.shape[0], dtype=np.int64)
-            np.random.shuffle(idx)
-            pointcloud = self.data[item][idx]
-            label = self.label[item][idx]
-        return pointcloud, label
-
-    def __len__(self):
-        return self.data.shape[0]
-
-class ShapeNetPart(Dataset):
-    def __init__(self, num_points=2048, partition='train', class_choice=None):
-        self.data, self.label, self.seg = load_data_partseg(partition)
-        self.cat2id = {'airplane': 0, 'bag': 1, 'cap': 2, 'car': 3, 'chair': 4, 
-                       'earphone': 5, 'guitar': 6, 'knife': 7, 'lamp': 8, 'laptop': 9, 
-                       'motor': 10, 'mug': 11, 'pistol': 12, 'rocket': 13, 'skateboard': 14, 'table': 15}
-        self.seg_num = [4, 2, 2, 4, 4, 3, 3, 2, 4, 2, 6, 2, 3, 3, 3, 3]
-        self.index_start = [0, 4, 6, 8, 12, 16, 19, 22, 24, 28, 30, 36, 38, 41, 44, 47]
-        self.num_points = num_points
-        self.partition = partition        
-        self.class_choice = class_choice
-
-        if self.class_choice != None:
-            id_choice = self.cat2id[self.class_choice]
-            indices = (self.label == id_choice).squeeze()
-            self.data = self.data[indices]
-            self.label = self.label[indices]
-            self.seg = self.seg[indices]
-            self.seg_num_all = self.seg_num[id_choice]
-            self.seg_start_index = self.index_start[id_choice]
-        else:
-            self.seg_num_all = 50
-            self.seg_start_index = 0
-
-    def __getitem__(self, item):
-        pointcloud = self.data[item][:self.num_points]
-        label = self.label[item]
-        seg = self.seg[item][:self.num_points]
-        if self.partition == 'trainval':
-            pointcloud = translate_pointcloud(pointcloud)
-            indices = list(range(pointcloud.shape[0]))
-            np.random.shuffle(indices)
-            pointcloud = pointcloud[indices]
-            seg = seg[indices]
-        return pointcloud, label, seg
 
     def __len__(self):
         return self.data.shape[0]

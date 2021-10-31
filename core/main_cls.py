@@ -18,7 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
-from data import ModelNet40
+from data import Proteins
 from models.curvenet_cls import CurveNet
 import numpy as np
 from torch.utils.data import DataLoader
@@ -48,16 +48,17 @@ def _init_():
     os.system('cp models/curvenet_cls.py ../checkpoints/'+args.exp_name+'/curvenet_cls.py.backup')
 
 def train(args, io):
-    train_loader = DataLoader(ModelNet40(partition='train', num_points=args.num_points), num_workers=8,
+    train_loader = DataLoader(Proteins(partition='train', num_points=args.num_points), num_workers=8,
                               batch_size=args.batch_size, shuffle=True, drop_last=True)
-    test_loader = DataLoader(ModelNet40(partition='test', num_points=args.num_points), num_workers=8,
+    test_loader = DataLoader(Proteins(partition='test', num_points=args.num_points), num_workers=8,
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
     device = torch.device("cuda" if args.cuda else "cpu")
     io.cprint("Let's use" + str(torch.cuda.device_count()) + "GPUs!")
-    
+
     # create model
-    model = CurveNet().to(device)
+    num_classes = train_loader.dataset.num_label_categories
+    model = CurveNet(num_classes=num_classes).to(device)
     model = nn.DataParallel(model)
 
     if args.use_sgd:
@@ -85,19 +86,20 @@ def train(args, io):
         train_pred = []
         train_true = []
         for data, label in train_loader:
-            data, label = data.to(device), label.to(device).squeeze()
+            multihot_label = torch.zeros(label.size(0), num_classes).scatter_(1, label, 1.)
+            data, multihot_label = data.to(device), multihot_label.to(device).squeeze()
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             opt.zero_grad()
             logits = model(data)
-            loss = criterion(logits, label)
+            loss = criterion(logits, multihot_label)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             opt.step()
             preds = logits.max(dim=1)[1]
             count += batch_size
             train_loss += loss.item() * batch_size
-            train_true.append(label.cpu().numpy())
+            train_true.append(multihot_label.cpu().numpy())
             train_pred.append(preds.detach().cpu().numpy())
         if args.scheduler == 'cos':
             scheduler.step()
@@ -123,16 +125,16 @@ def train(args, io):
         model.eval()
         test_pred = []
         test_true = []
-        for data, label in test_loader:
-            data, label = data.to(device), label.to(device).squeeze()
+        for data, multihot_label in test_loader:
+            data, multihot_label = data.to(device), multihot_label.to(device).squeeze()
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             logits = model(data)
-            loss = criterion(logits, label)
+            loss = criterion(logits, multihot_label)
             preds = logits.max(dim=1)[1]
             count += batch_size
             test_loss += loss.item() * batch_size
-            test_true.append(label.cpu().numpy())
+            test_true.append(multihot_label.cpu().numpy())
             test_pred.append(preds.detach().cpu().numpy())
         test_true = np.concatenate(test_true)
         test_pred = np.concatenate(test_pred)
@@ -145,7 +147,7 @@ def train(args, io):
         io.cprint('best: %.3f' % best_test_acc)
 
 def test(args, io):
-    test_loader = DataLoader(ModelNet40(partition='test', num_points=args.num_points),
+    test_loader = DataLoader(Proteins(partition='test', num_points=args.num_points),
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
     device = torch.device("cuda" if args.cuda else "cpu")
