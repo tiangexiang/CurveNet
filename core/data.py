@@ -20,13 +20,17 @@ import sys
 import torch
 from dataclasses import dataclass
 from torch.utils.data import Dataset
+
+sys.path.append(f"{os.path.dirname(__file__)}/../../..")
 from utils.proteins import *
 
 # change this to your data root
-DATA_DIR = '../../UP000005640_9606_HUMAN/'
+DATA_DIR = f'{os.path.dirname(__file__)}/../../../structure_files/atom_sites'
 POINT_CLOUD_DIR = os.path.join(DATA_DIR, "point_clouds")
-CIF_SUFFIX = ".cif.gz"
-POINT_CLOUD_HDF5 = f"{POINT_CLOUD_DIR}/protein_point_clouds.hdf5"
+POINT_CLOUD_HDF5 = lambda x: f"{POINT_CLOUD_DIR}/{x}_protein_point_clouds.hdf5"
+
+EVAL_PCT = 0.1
+
 
 @dataclass
 class ProteinPointCloud:
@@ -39,25 +43,28 @@ class ProteinPointCloud:
             atom_sites=self.atom_sites,
             labels=label_lookup_dict.get(self.protein_id))
 
+
 @dataclass
 class ProteinPointCloudWLabel:
     protein_id: str
     atom_sites: np.ndarray
     labels: np.ndarray
 
-def store_point_clouds_w_labels_as_hd5f(point_clouds_w_labels):
-    N = len(point_clouds_w_labels)
-    with h5py.File(POINT_CLOUD_HDF5, "w") as f:
-        f.create_dataset("protein_id", shape=(N,), dtype=np.dtype(str),
-                         data=[p.protein_id for p in point_clouds_w_labels])
-        f.create_dataset("atom_sites", shape=(N, 3), dtype=np.dtype(float),
-                         data=[p.protein_id for p in point_clouds_w_labels])
-        f.create_dataset("labels", shape=(N,), dtype=np.dtype('O'),
-                         data=[p.labels for p in point_clouds_w_labels])
 
-def read_point_clouds_w_labels_as_hd5f():
-    with h5py.File(POINT_CLOUD_HDF5, "r") as f:
-        return f["atom_sites"], f["labels"]
+def store_point_clouds_w_labels_as_hd5f(point_clouds_w_labels, partition):
+    N = len(point_clouds_w_labels)
+    with h5py.File(POINT_CLOUD_HDF5(partition), "w") as f:
+        f.create_dataset("protein_id", shape=(N,), dtype=h5py.string_dtype(),
+                         data=[p.protein_id for p in point_clouds_w_labels])
+        f.create_dataset("labels", shape=(N,), dtype=h5py.vlen_dtype(np.dtype('int32')),
+                         data=[np.array(p.labels).astype(int) for p in point_clouds_w_labels])
+        f.create_dataset("atom_sites", shape=(N,2048,3), dtype=np.dtype(float),
+                         data=np.vstack([p.atom_sites for p in point_clouds_w_labels]))
+
+
+def read_point_clouds_w_labels_as_hd5f(partition):
+    with h5py.File(POINT_CLOUD_HDF5(partition), "r+") as f:
+        return f["atom_sites"][:], f["labels"][:]
 
 
 def protein_to_point_cloud(atom_sites: np.ndarray, num_points: int):
@@ -67,59 +74,63 @@ def protein_to_point_cloud(atom_sites: np.ndarray, num_points: int):
         return padded
     else:
         idx = np.sort(np.random.choice(np.arange(0, atom_sites.shape[0]), size=num_points, replace=False))
-        return atom_sites[idx,:]
+        sampled = atom_sites[idx,:]
+        assert (sampled.shape == (num_points, 3))
+        return sampled
 
 
-def create_protein_point_clouds(overwrite=False):
+def create_protein_point_clouds(num_points=2048, overwrite=False):
     dir_exists = os.path.exists(POINT_CLOUD_DIR)
     if dir_exists and overwrite:
         os.rmdir(POINT_CLOUD_DIR)
     if not dir_exists:
+        np.random.seed(20211020)  # set a seed to randomize train and eval groups
+
         os.mkdir(POINT_CLOUD_DIR)
 
         label_lookup_dict = load_labels()
+        print(max([len(k) for k in label_lookup_dict.keys()]))
 
-        point_clouds = []
-        for filename in glob.glob(DATA_DIR, "*"+CIF_SUFFIX):
-            protein_id = get_protein_id_from_filename(filename)
-            with gzip.open(filename, 'rt') as f:
-                atom_sites = get_atom_sites_from_cif(parse_cif(f.read()))[["protein_"]]
-                atom_sites = atom_sites[['Cartn_x', 'Cartn_y', 'Cartn_z']].to_numpy()
-            point_clouds.append(ProteinPointCloud(protein_id, atom_sites))
+        train_point_clouds = []
+        test_point_clouds = []
 
-        point_clouds = [p.get_w_label(label_lookup_dict) for p in point_clouds]
-        store_point_clouds_w_labels_as_hd5f(point_clouds)
+        atom_files = glob.glob(os.path.join(DATA_DIR, "atom_sites_part_*.parquet"))
+        for filename in atom_files:
+            print(filename.split("/")[-1])
+            atom_sites = pd.read_parquet(filename)
+            for id, group in atom_sites.groupby("protein_id"):
+                group = protein_to_point_cloud(group[['Cartn_x', 'Cartn_y', 'Cartn_z']].apply(pd.to_numeric).to_numpy(), num_points=num_points)
+                if np.random.random() < EVAL_PCT:
+                    test_point_clouds.append(ProteinPointCloud(id, group))
+                else:
+                    train_point_clouds.append(ProteinPointCloud(id, group))
 
+        train_point_clouds = [p.get_w_label(label_lookup_dict) for p in train_point_clouds if
+                              len(label_lookup_dict.get(p.protein_id)) > 0]
+        test_point_clouds = [p.get_w_label(label_lookup_dict) for p in test_point_clouds if
+                              len(label_lookup_dict.get(p.protein_id)) > 0]
+        print(f"Number of protein point clouds generated: {len(train_point_clouds) + len(test_point_clouds)}")
+        print(f"Number of training proteins: {len(train_point_clouds)}")
+        print(f"Number of test proteins: {len(test_point_clouds)}")
+        print(f"Storing protein point clouds in hd5f format: {POINT_CLOUD_HDF5}")
+        store_point_clouds_w_labels_as_hd5f(train_point_clouds, "train")
+        store_point_clouds_w_labels_as_hd5f(test_point_clouds, "test")
+        print("Done created point clouds")
 
 def load_labels():
     def get_index_of_function_label(function, function_arr):
-        return function_arr.index(function)
+        return function_arr.get(function)
 
-    functions = pd.read_parquet(f"{DATA_DIR}/functional_sim_gomf_to_alphafold_protein.parquet")
+    functions = pd.read_parquet(f"{DATA_DIR}/alphafold_protein_to_parent_gomf_only.parquet")
     functions["parent_gomf_w_name"] = functions.parent_gomf + "|" + functions.parent_gomf_name
-    unique_functions = sorted(functions.parent_gomf_w_name.unique())
+    unique_functions = sorted(functions.parent_gomf_w_name.dropna().unique())
+
+    functions_to_index = {function: int(i) for i, function in enumerate(unique_functions)}
     functions['function_idx'] = functions.parent_gomf_w_name.apply(
-        lambda x: get_index_of_function_label(x, unique_functions)
+        lambda x: get_index_of_function_label(x, functions_to_index)
     )
-    protein_to_function_labels = functions.groupby("protein_id").function_idx.agg(lambda x: sorted(list(set(x))))
+    protein_to_function_labels = functions.groupby("protein_id").function_idx.agg(lambda x: sorted(list(set(x.dropna()))))
     return protein_to_function_labels.to_dict()
-
-
-def load_data_cls(partition, overwrite=False):
-    if not os.path.exists(DATA_DIR):
-        raise Exception("first download UP000005640_9606_HUMAN into project root")
-    create_protein_point_clouds(overwrite=overwrite)
-    all_data, all_label = read_point_clouds_w_labels_as_hd5f()
-    # for f in glob.glob(os.path.join(DATA_DIR, 'modelnet40*hdf5_2048', '*%s*.h5'%partition)):
-    #     f = h5py.File(h5_name, 'r+')
-    #     data = f['data'][:].astype('float32')
-    #     label = f['label'][:].astype('int64')
-    #     f.close()
-    #     all_data.append(data)
-    #     all_label.append(label)
-    all_data = np.concatenate(all_data, axis=0)
-    all_label = np.concatenate(all_label, axis=0)
-    return all_data, all_label
 
 
 def translate_pointcloud(pointcloud):
@@ -143,11 +154,30 @@ def rotate_pointcloud(pointcloud):
     return pointcloud
 
 
-class ModelNet40(Dataset):
+class Proteins(Dataset):
     def __init__(self, num_points, partition='train'):
-        self.data, self.label = load_data_cls(partition)
+        self.num_label_categories = 18
+        self.data, self.label = self.load_data_cls(partition)
         self.num_points = num_points
-        self.partition = partition        
+        self.partition = partition
+
+    @staticmethod
+    def load_data_cls(partition, overwrite=False):
+        if not os.path.exists(DATA_DIR):
+            raise Exception("first download structure_files into project root")
+        create_protein_point_clouds(overwrite=overwrite)
+        all_data, all_label = read_point_clouds_w_labels_as_hd5f(partition)
+        # for f in glob.glob(os.path.join(DATA_DIR, 'modelnet40*hdf5_2048', '*%s*.h5'%partition)):
+        #     f = h5py.File(h5_name, 'r+')
+        #     data = f['data'][:].astype('float32')
+        #     label = f['label'][:].astype('int64')
+        #     f.close()
+        #     all_data.append(data)
+        #     all_label.append(label)
+        print(all_data.shape)
+        print(all_label.shape)
+        return all_data, all_label
+
 
     def __getitem__(self, item):
         pointcloud = self.data[item][:self.num_points]

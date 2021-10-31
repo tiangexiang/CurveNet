@@ -9,6 +9,8 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+# import torch.nn.BCELoss
+# import torch.nn.BCEWithLogitsLoss
 
 
 def cal_loss(pred, gold, smoothing=True):
