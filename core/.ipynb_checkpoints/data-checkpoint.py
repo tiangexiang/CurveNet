@@ -189,7 +189,7 @@ class Proteins(Dataset):
         label = self.label[item]
         if self.partition == 'train':
             pointcloud = translate_pointcloud(pointcloud)
-            # pointcloud = jitter_pointcloud(pointcloud)
+            pointcloud = jitter_pointcloud(pointcloud)
             np.random.shuffle(pointcloud)
         return pointcloud, label
 
