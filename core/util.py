@@ -9,6 +9,8 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+import sklearn.metrics as metrics
+from evaluation import *
 # import torch.nn.BCELoss
 # import torch.nn.BCEWithLogitsLoss
 
@@ -49,3 +51,26 @@ class IOStream():
 
     def close(self):
         self.f.close()
+
+        
+def evaluate(true, pred_prob, icvec, nth=10):
+    test_eval_metrics = {}
+    
+    pred = np.zeros(pred_prob.shape, dtype=bool)
+    pred[np.arange(len(pred_prob)), pred_prob.argmax(axis=1)] = 1
+    pred[(pred_prob > 0.5)] = 1
+    pred = pred.astype(float)
+    
+    test_eval_metrics['acc'] = metrics.accuracy_score(true, (pred_prob > 0.5).astype(float))
+    # https://github.com/stamakro/GCN-for-Structure-and-Function/blob/fb148d5579adbb805c1d054d24216db285198540/scripts/model.py#L109-L142
+    # Average precision score
+    test_eval_metrics['avg_avgprec'] = average_precision_score(true, pred_prob, average='samples')
+    # ROC AUC score
+    ii = np.where(np.sum(true, 0) > 0)[0]
+    test_eval_metrics['avg_rocauc'] = roc_auc_score(true[:, ii], pred_prob[:, ii], average='macro')
+    # Minimum semantic distance
+    test_eval_metrics['avg_sdmin'] = smin(true, pred_prob, icvec, nrThresholds=nth)
+    # Maximum F-score
+    nth=10
+    test_eval_metrics['avg_fmax'] = fmax(true, pred_prob, nrThresholds=nth)
+    return test_eval_metrics

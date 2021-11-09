@@ -66,7 +66,38 @@ class CurveNet(nn.Module):
         x_avg = F.adaptive_avg_pool1d(x, 1)
         
         x = torch.cat((x_max, x_avg), dim=1).squeeze(-1)
-        x = F.relu(self.bn1(self.conv1(x).unsqueeze(-1)), inplace=True).squeeze(-1)
+        latent_feat = F.relu(self.bn1(self.conv1(x).unsqueeze(-1)), inplace=True).squeeze(-1)
+        x = latent_feat
         x = self.dp1(x)
         x = self.conv2(x)
-        return x
+        return x, latent_feat
+    
+class CurveNetWithLSTMHead(CurveNet):
+    def __init__(self, num_classes=40, k=20, num_input_to_curvenet=1024, setting='default'):
+        super(CurveNetWithLSTMHead, self).__init__(num_classes, k, setting)
+        self.lstm_head = nn.LSTM(input_size=3, hidden_size=1, num_layers=1, bidirectional=True)
+        self.linear1 = nn.Linear(2048, num_input_to_curvenet)
+        self.num_input_to_curvenet=num_input_to_curvenet
+        
+    def choose_n_points(self, xyz):
+        # (batch, 3, n_points) -> (batch, n_points, 3)
+        xyz = torch.swapaxes(xyz, 1, 2)
+        lstm_out, lstm_grad = self.lstm_head(xyz)
+        # flatten bidirectional output to two features per point
+        # input one hidden layer to extract single value per point
+        out = self.linear1(torch.flatten(lstm_out, start_dim=1))
+        
+        # gather top values to move on to curvenet
+        topk_val, topk_ind = torch.topk(out, self.num_input_to_curvenet, dim=1)
+        topk_points = torch.gather(xyz, 1, topk_ind.unsqueeze(-1).repeat(1, 1, 3))
+        shuffled = self.shuffle(topk_points)
+        return torch.swapaxes(shuffled, 1, 2)
+    
+    def shuffle(self, xyz):
+        x = torch.rand(xyz.shape[0], self.num_input_to_curvenet)
+        indices = torch.argsort(torch.rand(*x.shape), dim=-1)
+        return xyz[torch.arange(xyz.shape[0]).unsqueeze(-1), indices]
+    
+    def forward(self, xyz):
+        xyz = self.choose_n_points(xyz)
+        return super(CurveNetWithLSTMHead, self).forward(xyz)
