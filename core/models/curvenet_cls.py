@@ -16,8 +16,9 @@ curve_config = {
     }
 
 class CurveNet(nn.Module):
-    def __init__(self, num_classes=40, k=20, setting='default'):
+    def __init__(self, num_classes=40, k=20, num_input_to_curvenet=1024, setting='default'):
         super(CurveNet, self).__init__()
+        self.num_input_to_curvenet = num_input_to_curvenet
 
         assert setting in curve_config
 
@@ -25,17 +26,17 @@ class CurveNet(nn.Module):
         self.lpfa = LPFA(9, additional_channel, k=k, mlp_num=1, initial=True)
 
         # encoder
-        self.cic11 = CIC(npoint=1024, radius=0.1, k=k, in_channels=additional_channel, output_channels=64, bottleneck_ratio=2, mlp_num=1, curve_config=curve_config[setting][0])
-        self.cic12 = CIC(npoint=1024, radius=0.1, k=k, in_channels=64, output_channels=64, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][0])
+        self.cic11 = CIC(npoint=self.num_input_to_curvenet, radius=0.2, k=k, in_channels=additional_channel, output_channels=64, bottleneck_ratio=2, mlp_num=1, curve_config=curve_config[setting][0])
+        self.cic12 = CIC(npoint=self.num_input_to_curvenet, radius=0.2, k=k, in_channels=64, output_channels=64, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][0])
         
-        self.cic21 = CIC(npoint=1024, radius=0.2, k=k, in_channels=64, output_channels=128, bottleneck_ratio=2, mlp_num=1, curve_config=curve_config[setting][1])
-        self.cic22 = CIC(npoint=1024, radius=0.2, k=k, in_channels=128, output_channels=128, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][1])
+        self.cic21 = CIC(npoint=1024, radius=0.3, k=k, in_channels=64, output_channels=128, bottleneck_ratio=2, mlp_num=1, curve_config=curve_config[setting][1])
+        self.cic22 = CIC(npoint=1024, radius=0.3, k=k, in_channels=128, output_channels=128, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][1])
 
-        self.cic31 = CIC(npoint=256, radius=0.3, k=k, in_channels=128, output_channels=256, bottleneck_ratio=2, mlp_num=1, curve_config=curve_config[setting][2])
-        self.cic32 = CIC(npoint=256, radius=0.3, k=k, in_channels=256, output_channels=256, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][2])
+        self.cic31 = CIC(npoint=256, radius=0.5, k=k, in_channels=128, output_channels=256, bottleneck_ratio=2, mlp_num=1, curve_config=curve_config[setting][2])
+        self.cic32 = CIC(npoint=256, radius=0.5, k=k, in_channels=256, output_channels=256, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][2])
 
-        self.cic41 = CIC(npoint=64, radius=0.4, k=k, in_channels=256, output_channels=512, bottleneck_ratio=2, mlp_num=1, curve_config=curve_config[setting][3])
-        self.cic42 = CIC(npoint=64, radius=0.4, k=k, in_channels=512, output_channels=512, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][3])
+        self.cic41 = CIC(npoint=64, radius=1, k=k, in_channels=256, output_channels=512, bottleneck_ratio=2, mlp_num=1, curve_config=curve_config[setting][3])
+        self.cic42 = CIC(npoint=64, radius=1, k=k, in_channels=512, output_channels=512, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][3])
 
         self.conv0 = nn.Sequential(
             nn.Conv1d(512, 1024, kernel_size=1, bias=False),
@@ -45,8 +46,14 @@ class CurveNet(nn.Module):
         self.conv2 = nn.Linear(512, num_classes)
         self.bn1 = nn.BatchNorm1d(512)
         self.dp1 = nn.Dropout(p=0.5)
+        
+    def shuffle(self, xyz):
+        x = torch.rand(xyz.shape[0], xyz.shape[1])
+        indices = torch.argsort(torch.rand(*x.shape), dim=-1)
+        return xyz[torch.arange(xyz.shape[0]).unsqueeze(-1), indices]
 
     def forward(self, xyz):
+        shuffled = torch.swapaxes(self.shuffle(torch.swapaxes(xyz, 1, 2)), 1, 2)
         l0_points = self.lpfa(xyz, xyz)
 
         l1_xyz, l1_points = self.cic11(xyz, l0_points)
@@ -74,10 +81,9 @@ class CurveNet(nn.Module):
     
 class CurveNetWithLSTMHead(CurveNet):
     def __init__(self, num_classes=40, k=20, num_input_to_curvenet=1024, setting='default'):
-        super(CurveNetWithLSTMHead, self).__init__(num_classes, k, setting)
+        super(CurveNetWithLSTMHead, self).__init__(num_classes, k, num_input_to_curvenet, setting)
         self.lstm_head = nn.LSTM(input_size=3, hidden_size=1, num_layers=1, bidirectional=True)
         self.linear1 = nn.Linear(2048, num_input_to_curvenet)
-        self.num_input_to_curvenet=num_input_to_curvenet
         
     def choose_n_points(self, xyz):
         # (batch, 3, n_points) -> (batch, n_points, 3)
@@ -92,11 +98,6 @@ class CurveNetWithLSTMHead(CurveNet):
         topk_points = torch.gather(xyz, 1, topk_ind.unsqueeze(-1).repeat(1, 1, 3))
         shuffled = self.shuffle(topk_points)
         return torch.swapaxes(shuffled, 1, 2)
-    
-    def shuffle(self, xyz):
-        x = torch.rand(xyz.shape[0], self.num_input_to_curvenet)
-        indices = torch.argsort(torch.rand(*x.shape), dim=-1)
-        return xyz[torch.arange(xyz.shape[0]).unsqueeze(-1), indices]
     
     def forward(self, xyz):
         xyz = self.choose_n_points(xyz)

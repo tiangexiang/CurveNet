@@ -62,7 +62,7 @@ def train(args, io):
     icvec = np.ones((num_classes,))#np.load(args.icvec_file).astype(np.float32)
     assert icvec.size == num_classes
     
-    model = CurveNetWithLSTMHead(num_classes=num_classes).to(device)
+    model = CurveNet(k=16, num_classes=num_classes, num_input_to_curvenet=args.num_points).to(device)
     model = nn.DataParallel(model)
 
     if args.use_sgd:
@@ -182,9 +182,12 @@ def test(args, io):
     test_acc = metrics.accuracy_score(test_true, test_pred)
     outstr = 'Test :: test acc: %.6f'%(test_acc)
     io.cprint(outstr)
+    
 
 
 if __name__ == "__main__":
+    def str2bool(value):
+        return value.lower() == 'true'
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Recognition')
     parser.add_argument('--exp_name', type=str, default='exp', metavar='N',
@@ -197,7 +200,7 @@ if __name__ == "__main__":
                         help='Size of batch)')
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of episode to train ')
-    parser.add_argument('--use_sgd', type=bool, default=True,
+    parser.add_argument('--use_sgd', type=str2bool, default=True,
                         help='Use SGD')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 0.001, 0.1 if using sgd)')
