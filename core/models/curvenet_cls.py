@@ -11,7 +11,7 @@ from .curvenet_util import *
 
 
 curve_config = {
-        'default': [[100, 5], [100, 5], None, None],
+        'default': [[50, 10], [50, 10], None, None],
         'long':  [[10, 30], None,  None,  None]
     }
 
@@ -72,9 +72,9 @@ class CurveNet(nn.Module):
         x_max = F.adaptive_max_pool1d(x, 1)
         x_avg = F.adaptive_avg_pool1d(x, 1)
         
-        x = torch.cat((x_max, x_avg), dim=1).squeeze(-1)
-        latent_feat = F.relu(self.bn1(self.conv1(x).unsqueeze(-1)), inplace=True).squeeze(-1)
+        latent_feat = torch.cat((x_max, x_avg), dim=1).squeeze(-1)
         x = latent_feat
+        x = F.relu(self.bn1(self.conv1(x).unsqueeze(-1)), inplace=True).squeeze(-1)
         x = self.dp1(x)
         x = self.conv2(x)
         return x, latent_feat
