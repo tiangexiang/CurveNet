@@ -48,8 +48,9 @@ class ProteinPointCloud:
     
     def labels_to_multihot(self, labels, N):
         arr = np.zeros((N,))
-        idx = np.array(labels, dtype=int)
-        arr[idx] = 1.0
+        if labels: 
+            idx = np.array(labels, dtype=int)
+            arr[idx] = 1.0
         return arr
 
     def get_w_label(self, label_lookup_dict, n_categories:int=18):
@@ -93,7 +94,7 @@ def store_point_clouds_w_labels_as_hd5f(name, point_clouds_w_labels, partition, 
 
 def read_point_clouds_w_labels_as_hd5f(name, partition):
     with h5py.File(get_point_cloud_hdf5(name, partition), "r+") as f:
-        return f["atom_sites"][:], f["labels"][:]
+        return f["protein_id"][:], f["atom_sites"][:], f["labels"][:]
 
 
 def one_per_amino_acid(atom_sites: pd.DataFrame):
@@ -126,6 +127,16 @@ def protein_to_masked_point_cloud(atom_sites: pd.DataFrame, num_points: int):
     return protein_to_sampled_point_cloud(atom_sites, num_points)
     
 
+def train_test_split(all_point_clouds_w_labels):
+    train_point_clouds, test_point_clouds = [], []
+    for p in all_point_clouds_w_labels:
+        if hash(p.protein_id) % 100 >= (EVAL_PCT*100):
+            train_point_clouds.append(p)
+        else:
+            test_point_clouds.append(p)
+    return train_point_clouds, test_point_clouds
+
+    
 def create_protein_point_clouds(name, num_points=2048, overwrite=False):
     if not os.path.exists(BASE_POINT_CLOUD_DIR): os.mkdir(BASE_POINT_CLOUD_DIR)
     POINT_CLOUD_DIR = get_point_cloud_dir(name)
@@ -137,8 +148,7 @@ def create_protein_point_clouds(name, num_points=2048, overwrite=False):
         label_lookup_dict = load_labels()
         n_categories = int(max([max(k) for k in label_lookup_dict.values() if len(k) > 0]) + 1)
 
-        train_point_clouds = []
-        test_point_clouds = []
+        all_point_clouds = []
 
         atom_files = glob.glob(os.path.join(DATA_DIR, "atom_sites_part_*.parquet"))
         for filename in atom_files:
@@ -150,21 +160,22 @@ def create_protein_point_clouds(name, num_points=2048, overwrite=False):
                 if group.shape[0]==0:
                     print("no points, skipping")
                     continue
-                elif hash(id) % 100 < EVAL_PCT*100:
-                    test_point_clouds.append(ProteinPointCloud(id, group, group.shape[0]))
                 else:
-                    train_point_clouds.append(ProteinPointCloud(id, group, group.shape[0]))
+                    all_point_clouds.append(ProteinPointCloud(id, group, group.shape[0]))
 
-        train_point_clouds = [p.get_w_label(label_lookup_dict, n_categories) for p in train_point_clouds if
-                              len(label_lookup_dict.get(p.protein_id)) > 0]
-        test_point_clouds = [p.get_w_label(label_lookup_dict, n_categories) for p in test_point_clouds if
-                              len(label_lookup_dict.get(p.protein_id)) > 0]
-        print(f"Number of protein point clouds generated: {len(train_point_clouds) + len(test_point_clouds)}")
+        all_point_clouds = [p.get_w_label(label_lookup_dict, n_categories) for p in all_point_clouds]
+        all_point_clouds_w_labels = [p for p in all_point_clouds if p.labels.sum() > 0]
+        train_point_clouds, test_point_clouds = train_test_split(all_point_clouds_w_labels)
+        
+        print(f"Number of protein point clouds generated: {len(all_point_clouds)}")
+        print(f"Number of protein point clouds generated with labels: {len(all_point_clouds_w_labels)}")
         print(f"Number of training proteins: {len(train_point_clouds)}")
         print(f"Number of test proteins: {len(test_point_clouds)}")
         print(f"Storing protein point clouds in hd5f format: {POINT_CLOUD_HDF5}")
         store_point_clouds_w_labels_as_hd5f(name, train_point_clouds, "train", num_points, n_categories)
         store_point_clouds_w_labels_as_hd5f(name, test_point_clouds, "test", num_points, n_categories)
+        store_point_clouds_w_labels_as_hd5f(name, all_point_clouds, "all", num_points, n_categories)
+        store_point_clouds_w_labels_as_hd5f(name, all_point_clouds_w_labels, "all_with_labels", num_points, n_categories)
         print("Done created point clouds")
 
         
@@ -259,7 +270,8 @@ class ProteinsExtended(Dataset):
         pointcloud = self.data[item]
         label = self.label[item]
         if self.partition == 'train':
-            pointcloud = translate_pointcloud(pointcloud)
+            pointcloud = rotate_pointcloud(pointcloud)
+            # pointcloud = translate_pointcloud(pointcloud)
             # pointcloud = jitter_pointcloud(pointcloud)
             # np.random.shuffle(pointcloud)
         return pointcloud, label
@@ -274,26 +286,29 @@ class ProteinsExtendedWithMask(Dataset):
         self.num_points = num_points
         self.partition = partition
         self.max_points = 4000
-        self.data, self.label = self.load_data_cls(partition)
+        self.id, self.data, self.label = self.load_data_cls(partition)
         
     def load_data_cls(self, partition, overwrite=False):
         if not os.path.exists(DATA_DIR):
             raise Exception("first download structure_files into project root")
         create_protein_point_clouds(name="sequence_head_w_confidence_mask", num_points=self.max_points, overwrite=overwrite)
-        all_data, all_label = read_point_clouds_w_labels_as_hd5f(name="sequence_head_w_confidence_mask", partition=partition)
+        all_id, all_data, all_label = read_point_clouds_w_labels_as_hd5f(name="sequence_head_w_confidence_mask", partition=partition)
+        print(all_id.shape)
         print(all_data.shape)
         print(all_label.shape)
-        return all_data, all_label
+        return all_id, all_data, all_label
 
 
     def __getitem__(self, item):
+        _id = self.id[item]
         pointcloud = self.data[item]
         label = self.label[item]
         if self.partition == 'train':
-            pointcloud = translate_pointcloud(pointcloud)
+            pointcloud = rotate_pointcloud(pointcloud)
+            # pointcloud = translate_pointcloud(pointcloud)
             # pointcloud = jitter_pointcloud(pointcloud)
             # np.random.shuffle(pointcloud)
-        return pointcloud, label
+        return _id, pointcloud, label
 
     def __len__(self):
         return self.data.shape[0]

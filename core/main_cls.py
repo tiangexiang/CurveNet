@@ -62,7 +62,7 @@ def train(args, io):
     icvec = np.ones((num_classes,))#np.load(args.icvec_file).astype(np.float32)
     assert icvec.size == num_classes
     
-    model = CurveNet(k=16, num_classes=num_classes, num_input_to_curvenet=args.num_points).to(device)
+    model = CurveNet(k=32, num_classes=num_classes, num_input_to_curvenet=args.num_points).to(device)
     model = nn.DataParallel(model)
 
     if args.use_sgd:
@@ -89,7 +89,7 @@ def train(args, io):
         model.train()
         train_prob = []
         train_true = []
-        for data, multihot_label in train_loader:
+        for _id, data, multihot_label in train_loader:
             data, multihot_label = data.to(device, dtype=torch.float), multihot_label.to(device)
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
@@ -129,7 +129,7 @@ def train(args, io):
         test_prob = []
         test_true = []
         with torch.no_grad():   # set all 'requires_grad' to False
-            for data, multihot_label in test_loader:
+            for _id, data, multihot_label in test_loader:
                 data, multihot_label = data.to(device, dtype=torch.float), multihot_label.to(device)
                 data = data.permute(0, 2, 1)
                 batch_size = data.size()[0]
@@ -182,6 +182,37 @@ def test(args, io):
     test_acc = metrics.accuracy_score(test_true, test_pred)
     outstr = 'Test :: test acc: %.6f'%(test_acc)
     io.cprint(outstr)
+    
+
+def embed(args, io):
+    train_loader = DataLoader(ProteinsExtendedWithMask(partition='train', num_points=args.num_points), num_workers=8,
+                              batch_size=args.batch_size, shuffle=True, drop_last=True)
+    test_loader = DataLoader(ProteinsExtendedWithMask(partition='test', num_points=args.num_points), num_workers=8,
+                             batch_size=args.test_batch_size, shuffle=False, drop_last=False)
+
+    device = torch.device("cuda" if args.cuda else "cpu")
+
+    #Try to load models
+    model = CurveNet(k=16, num_classes=num_classes, num_input_to_curvenet=args.num_points).to(device)
+    model = nn.DataParallel(model)
+    model.load_state_dict(torch.load(args.model_path))
+
+    model = model.eval()
+    count = 0.0
+    protein_ids = []
+    embeddings = []
+    for protein_ids, data, label in test_loader:
+        data, label = data.to(device), label.to(device).squeeze()
+        data = data.permute(0, 2, 1)
+        batch_size = data.size()[0]
+        emb = model(data)[1]
+        embeddings.append(label.cpu().numpy())
+        protein_ids.append(protein_ids.detach().cpu().numpy())
+    # test_true = np.concatenate(test_true)
+    # test_pred = np.concatenate(test_pred)
+    # test_acc = metrics.accuracy_score(test_true, test_pred)
+    # outstr = 'Test :: test acc: %.6f'%(test_acc)
+    # io.cprint(outstr)
     
 
 

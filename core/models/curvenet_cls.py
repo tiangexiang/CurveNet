@@ -39,10 +39,10 @@ class CurveNet(nn.Module):
         self.cic42 = CIC(npoint=64, radius=1, k=k, in_channels=512, output_channels=512, bottleneck_ratio=4, mlp_num=1, curve_config=curve_config[setting][3])
 
         self.conv0 = nn.Sequential(
-            nn.Conv1d(512, 1024, kernel_size=1, bias=False),
-            nn.BatchNorm1d(1024),
+            nn.Conv1d(512, 512, kernel_size=1, bias=False),
+            nn.BatchNorm1d(512),
             nn.ReLU(inplace=True))
-        self.conv1 = nn.Linear(1024 * 2, 512, bias=False)
+        self.conv1 = nn.Linear(512 * 2, 512, bias=False)
         self.conv2 = nn.Linear(512, num_classes)
         self.bn1 = nn.BatchNorm1d(512)
         self.dp1 = nn.Dropout(p=0.5)
