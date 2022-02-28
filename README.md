@@ -17,6 +17,7 @@ Paper: https://arxiv.org/abs/2105.01288
 - [Point Cloud Classification](#point-cloud-classification)
 - [Point Cloud Part Segmentation](#point-cloud-part-segmentation)
 - [Point Cloud Normal Estimation](#point-cloud-normal-estimation)
+- [Point Cloud Classification Under Corruptions](#point-cloud-classification-under-corruptions)
 
 **NOTE:** Please change your current directory to ```core/``` first before excuting the following commands.
 
@@ -107,9 +108,9 @@ Evaluate without voting:
 python3 main_partseg.py --exp_name=curvenet_seg_1 --eval=True --model_path=PATH_TO_YOUR_MODEL
 ```
 
-Alternatively, you can directly modify ```core/test_cls.sh``` and simply run:
+Alternatively, you can directly modify ```core/test_part.sh``` and simply run:
 ``` 
-./test_cls.sh
+./test_part.sh
 ```
 
 For voting, we used the ```voting_evaluate_partseg.py```script provided in [RSCNN](https://github.com/Yochengliu/Relation-Shape-CNN). Please refer to their license for usage.
@@ -170,6 +171,11 @@ And then run:
 ``` 
 python3 main_normal.py --exp_name=curvenet_normal_pretrained --eval=True --model_path=PATH_TO_PRETRAINED/normal/models/model.t7
 ```
+
+&nbsp;
+## Point Cloud Classification Under Corruptions
+In [a recent work](https://arxiv.org/abs/2201.12296), Sun et al. studied robustness of state-of-the-art point cloud processing architectures under common corruptions. **CurveNet was verifed by them to be the best architecture to function on common corruptions.** 
+Please refer to [their official repo](https://github.com/jiachens/ModelNet40-C) for details.
 
 ## Citation  
 
