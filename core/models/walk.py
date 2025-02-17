@@ -104,7 +104,7 @@ class Walk(nn.Module):
                 pre_feature = starting_points.view(bn, self.curve_num, -1, 1).transpose(1,2) # bs * n, c
             else:
                 # dynamic momentum
-                cat_feature = torch.cat((cur_feature.squeeze(), pre_feature.squeeze()),dim=1)
+                cat_feature = torch.cat((cur_feature.squeeze(-1), pre_feature.squeeze(-1)),dim=1)
                 att_feature = F.softmax(self.momentum_mlp(cat_feature),dim=1).view(bn, 1, self.curve_num, 2) # bs, 1, n, 2
                 cat_feature = torch.cat((cur_feature, pre_feature),dim=-1) # bs, c, n, 2
                 
