@@ -46,20 +46,29 @@ class CurveNet(nn.Module):
         self.bn1 = nn.BatchNorm1d(512)
         self.dp1 = nn.Dropout(p=0.5)
 
-    def forward(self, xyz):
+    def forward(self, xyz, get_flatten_curve_idxs=False):
+        flatten_curve_idxs = {}
         l0_points = self.lpfa(xyz, xyz)
 
-        l1_xyz, l1_points = self.cic11(xyz, l0_points)
-        l1_xyz, l1_points = self.cic12(l1_xyz, l1_points)
+        l1_xyz, l1_points, flatten_curve_idxs_11 = self.cic11(xyz, l0_points)
+        flatten_curve_idxs['flatten_curve_idxs_11'] = flatten_curve_idxs_11
+        l1_xyz, l1_points, flatten_curve_idxs_12 = self.cic12(l1_xyz, l1_points)
+        flatten_curve_idxs['flatten_curve_idxs_12'] = flatten_curve_idxs_12
 
-        l2_xyz, l2_points = self.cic21(l1_xyz, l1_points)
-        l2_xyz, l2_points = self.cic22(l2_xyz, l2_points)
+        l2_xyz, l2_points, flatten_curve_idxs_21 = self.cic21(l1_xyz, l1_points)
+        flatten_curve_idxs['flatten_curve_idxs_21'] = flatten_curve_idxs_21
+        l2_xyz, l2_points, flatten_curve_idxs_22 = self.cic22(l2_xyz, l2_points)
+        flatten_curve_idxs['flatten_curve_idxs_22'] = flatten_curve_idxs_22
 
-        l3_xyz, l3_points = self.cic31(l2_xyz, l2_points)
-        l3_xyz, l3_points = self.cic32(l3_xyz, l3_points)
+        l3_xyz, l3_points, flatten_curve_idxs_31 = self.cic31(l2_xyz, l2_points)
+        flatten_curve_idxs['flatten_curve_idxs_31'] = flatten_curve_idxs_31
+        l3_xyz, l3_points, flatten_curve_idxs_32 = self.cic32(l3_xyz, l3_points)
+        flatten_curve_idxs['flatten_curve_idxs_32'] = flatten_curve_idxs_32
  
-        l4_xyz, l4_points = self.cic41(l3_xyz, l3_points)
-        l4_xyz, l4_points = self.cic42(l4_xyz, l4_points)
+        l4_xyz, l4_points, flatten_curve_idxs_41 = self.cic41(l3_xyz, l3_points)
+        flatten_curve_idxs['flatten_curve_idxs_41'] = flatten_curve_idxs_41
+        l4_xyz, l4_points, flatten_curve_idxs_42 = self.cic42(l4_xyz, l4_points)
+        flatten_curve_idxs['flatten_curve_idxs_42'] = flatten_curve_idxs_42
 
         x = self.conv0(l4_points)
         x_max = F.adaptive_max_pool1d(x, 1)
@@ -69,4 +78,7 @@ class CurveNet(nn.Module):
         x = F.relu(self.bn1(self.conv1(x).unsqueeze(-1)), inplace=True).squeeze(-1)
         x = self.dp1(x)
         x = self.conv2(x)
-        return x
+        if get_flatten_curve_idxs:
+            return x, flatten_curve_idxs
+        else:
+            return x

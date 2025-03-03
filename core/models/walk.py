@@ -85,7 +85,8 @@ class Walk(nn.Module):
         x = x.transpose(1,2).contiguous() # bs, n, c
 
         flatten_x = x.view(bn * tot_points, -1)
-        batch_offset = torch.arange(0, bn, device=torch.device('cuda')).detach() * tot_points
+        device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+        batch_offset = torch.arange(0, bn, device=device).detach() * tot_points
 
         # indices of neighbors for the starting points
         tmp_adj = (adj + batch_offset.view(-1,1,1)).view(adj.size(0)*adj.size(1),-1) #bs, n, k
@@ -94,6 +95,7 @@ class Walk(nn.Module):
         flatten_cur = (cur + batch_offset.view(-1,1,1)).view(-1)
 
         curves = []
+        flatten_curve_idxs = [flatten_cur.unsqueeze(1)]
 
         # one step at a time
         for step in range(self.curve_length):
@@ -152,5 +154,5 @@ class Walk(nn.Module):
 
             # collect curve progress
             curves.append(cur_feature)
-
-        return torch.cat(curves,dim=-1)
+            flatten_curve_idxs.append(flatten_cur.unsqueeze(1))
+        return torch.cat(curves,dim=-1), torch.cat(flatten_curve_idxs, dim=1)
