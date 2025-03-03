@@ -53,8 +53,9 @@ def visualize(args):
 
     #Try to load models
     model = CurveNet().to(device)
-    model = nn.DataParallel(model)
-    model.load_state_dict(torch.load(args.model_path, map_location='cpu'))
+    weights = torch.load(args.model_path, map_location='cpu')
+    weights = {k[7:]: v for k, v in weights.items()}
+    model.load_state_dict(weights)
 
     model = model.eval()
     for idx, (data, label) in enumerate(test_loader):
