@@ -181,7 +181,7 @@ class LPFA(nn.Module):
     def __init__(self, in_channel, out_channel, k, mlp_num=2, initial=False):
         super(LPFA, self).__init__()
         self.k = k
-        self.device = torch.device('cuda')
+        self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
         self.initial = initial
 
         if not initial:
@@ -363,10 +363,12 @@ class CIC(nn.Module):
 
         if self.use_curve:
             # curve grouping
-            curves = self.curvegrouping(x, xyz, idx[:,:,1:]) # avoid self-loop
+            curves, flatten_curve_idxs = self.curvegrouping(x, xyz, idx[:,:,1:]) # avoid self-loop
 
             # curve aggregation
             x = self.curveaggregation(x, curves)
+        else:
+            flatten_curve_idxs = None
 
         x = self.lpfa(x, xyz, idx=idx[:,:,:self.k]) #bs, c', n, k
 
@@ -377,7 +379,7 @@ class CIC(nn.Module):
 
         x = self.relu(x + shortcut)
 
-        return xyz, x
+        return xyz, x, flatten_curve_idxs
 
 
 class CurveAggregation(nn.Module):
@@ -465,9 +467,9 @@ class CurveGrouping(nn.Module):
                                     sorted=False)
         start_index = start_index.squeeze(1).unsqueeze(2)
 
-        curves = self.walk(xyz, x, idx, start_index)  #bs, c, c_n, c_l
+        curves, flatten_curve_idxs = self.walk(xyz, x, idx, start_index)  #bs, c, c_n, c_l
         
-        return curves
+        return curves, flatten_curve_idxs
 
 
 class MaskedMaxPool(nn.Module):
